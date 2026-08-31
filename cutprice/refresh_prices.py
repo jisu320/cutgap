@@ -11,10 +11,32 @@ import sys
 from datetime import date
 
 from . import store
-from .menu import extract_cut_prices
+from .menu import extract_cut_prices, is_cut_menu
 from .naver import BudgetExhausted, Blocked, NaverPlace
 
 log = logging.getLogger("refresh")
+
+
+def apply_menus(place, menus):
+    """메뉴 목록을 판정 결과와 함께 저장한다.
+
+    커트로 분류된 메뉴는 이름/가격을 그대로 남긴다(cuts). 판정 규칙을
+    고칠 때마다 다시 긁지 않고 reparse로 재판정할 수 있어야 하기 때문이다.
+    펌·염색 등 커트가 아닌 메뉴는 저장하지 않는다.
+    """
+    cuts = [{"n": m.get("name"), "p": m.get("price")}
+            for m in menus if is_cut_menu(m)]
+    place["cuts"] = cuts
+    result = extract_cut_prices(menus)
+    place["w"] = result["w"]
+    place["m"] = result["m"]
+    return result
+
+
+def as_menus(cuts):
+    """저장된 cuts를 판정 함수가 먹는 형태로 되돌린다."""
+    return [{"name": c.get("n"), "price": c.get("p"), "priceType": "cut", "index": i}
+            for i, c in enumerate(cuts or [])]
 
 
 def stalest(limit):
@@ -31,6 +53,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description="커트 가격 갱신")
     parser.add_argument("--budget", type=int, default=2000, help="이번 실행의 최대 요청 수")
     parser.add_argument("--delay", type=float, default=3.0)
+    parser.add_argument("--save-every", type=int, default=25,
+                        help="이만큼 처리할 때마다 중간 저장한다")
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -50,12 +74,13 @@ def main(argv=None):
 
     done = priced = failed = 0
     stopped = False
+    total = len(targets)
     for key, ids in by_shard.items():
         if stopped:
             break
         shard = store.load_shard(key)
         index = {p["id"]: p for p in shard.get("places", [])}
-        dirty = False
+        dirty = 0
         for place_id in ids:
             place = index.get(place_id)
             if place is None:
@@ -67,18 +92,21 @@ def main(argv=None):
                 stopped = True
                 break
             place["checked"] = today
-            dirty = True
+            dirty += 1
             done += 1
             if menus is None:
                 place["gone"] = True
                 failed += 1
-                continue
-            place.pop("gone", None)
-            cut = extract_cut_prices(menus)
-            place["w"] = cut["w"]
-            place["m"] = cut["m"]
-            if cut["w"] or cut["m"]:
-                priced += 1
+            else:
+                place.pop("gone", None)
+                apply_menus(place, menus)
+                if place["w"] or place["m"]:
+                    priced += 1
+            # 오래 도는 작업이라 중간에 죽어도 여기까지는 남는다
+            if dirty >= args.save_every:
+                store.save_shard(key, shard)
+                dirty = 0
+                log.info("  %d/%d 진행 (가격 확보 %d)", done, total, priced)
         if dirty:
             store.save_shard(key, shard)
 

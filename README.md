@@ -88,7 +88,9 @@ python -m cutprice.make_sample --clear   # 실제 수집 시작할 때 지운다
 - 요청 간격 3초 + 지터, 429를 받으면 60초부터 지수적으로 물러난다
   (실측에서 짧은 버스트에도 바로 429가 떨어졌다)
 - 하루 요청 예산을 넘기면 스스로 멈춘다
-- 원문 HTML을 저장하지 않는다. 가격 숫자와 판정 근거 메뉴명만 남긴다
+- 원문 HTML을 저장하지 않는다. **커트로 분류된 메뉴의 이름·가격만** 남긴다
+  (펌·염색·클리닉 등은 저장하지 않는다). 판정 규칙을 고칠 때 재수집하지
+  않으려면 이 정도는 남겨야 한다 — `python -m cutprice.reparse`
 - 모든 항목에 네이버 원본 링크를 건다
 - 중단 요청이 오면 즉시 워크플로를 끄고 데이터를 내린다
 
@@ -140,5 +142,6 @@ python -m unittest discover -s tests -v
 | `cutprice/enumerate_places.py` | 1단계 목록 수집 |
 | `cutprice/refresh_prices.py` | 2단계 가격 갱신(순환) |
 | `cutprice/regions.py` | 지역 트리 자가 학습 |
+| `cutprice/reparse.py` | 저장된 메뉴로 재판정. 규칙 수정 후 네트워크 없이 반영 |
 | `cutprice/audit.py` | 대표가격 대비 어긋남 통계 |
 | `docs/` | GitHub Pages 정적 사이트 |

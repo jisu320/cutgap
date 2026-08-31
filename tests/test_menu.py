@@ -126,3 +126,34 @@ class TestExtract(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestRealNowonData(unittest.TestCase):
+    """노원구 380곳 실수집에서 최저가 상위를 오염시킨 실제 메뉴명들."""
+
+    def test_student_and_senior_rates_excluded(self):
+        for name in ("초,중,고", "중고생", "초,중.고", "커트(초,중,고)",
+                     "70세이상컷", "커트70세이상 커트", "경로우대 커트",
+                     "군인 커트", "복지 커트"):
+            menus = [menu(name, "5,000원"), menu("여성컷", "17,000원")]
+            got = extract_cut_prices(menus)
+            self.assertEqual(got["w"]["price"], 17000, name)
+            self.assertIn(name, got["dropped"])
+
+    def test_ibal_is_male_only(self):
+        """'이발'은 이용업의 남성 커트다. 여성가로 새면 안 된다."""
+        got = extract_cut_prices([menu("이발", "6,000원")])
+        self.assertEqual(got["m"]["price"], 6000)
+        self.assertEqual(got["m"]["how"], "exact")
+        self.assertIsNone(got["w"])
+
+    def test_cut_spelling_variants(self):
+        for name in ("컷트", "기본컷트", "여성컷트", "일반커트", "성인컷", "Cut"):
+            got = extract_cut_prices([menu(name, "15,000원")])
+            self.assertIsNotNone(got["m"] or got["w"], name)
+
+    def test_shared_menu_stays_neutral(self):
+        got = extract_cut_prices([menu("남녀 커트", "7,000원")])
+        self.assertEqual(got["w"]["price"], 7000)
+        self.assertEqual(got["w"]["how"], "neutral")
+        self.assertEqual(got["m"]["price"], 7000)
