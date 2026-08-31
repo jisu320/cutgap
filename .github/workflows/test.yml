@@ -1,0 +1,16 @@
+name: 테스트
+
+on:
+  push:
+    paths: ["cutprice/**", "tests/**", ".github/workflows/test.yml"]
+  pull_request:
+
+jobs:
+  unittest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m unittest discover -s tests -v

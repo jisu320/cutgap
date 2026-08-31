@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.venv/
+.env
+raw_cache/
+docs/config.local.js
