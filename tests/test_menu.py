@@ -157,3 +157,50 @@ class TestRealNowonData(unittest.TestCase):
         self.assertEqual(got["w"]["price"], 7000)
         self.assertEqual(got["w"]["how"], "neutral")
         self.assertEqual(got["m"]["price"], 7000)
+
+
+class TestBracketGenderAndAge(unittest.TestCase):
+    """노원구 데이터 2차 검수에서 남아 있던 누수들."""
+
+    def test_bracket_gender_marks(self):
+        self.assertEqual(gender_of("일반(여)"), "w")
+        self.assertEqual(gender_of("커트[남]"), "m")
+        self.assertEqual(gender_of("컷/여"), "w")
+        self.assertIsNone(gender_of("여/남 커트"))
+
+    def test_age_conditioned_price_excluded(self):
+        menus = [
+            menu("컷(65세에서69세)현ㆍ계", "8,000원"),
+            menu("커트 70세", "7,000원"),
+            menu("여성컷", "17,000원"),
+        ]
+        got = extract_cut_prices(menus)
+        self.assertEqual(got["w"]["price"], 17000)
+        self.assertEqual(len(got["dropped"]), 2)
+
+    def test_child_fare_excluded(self):
+        menus = [menu("소인", "5,000원"), menu("커트", "15,000원")]
+        got = extract_cut_prices(menus)
+        self.assertEqual(got["w"]["price"], 15000)
+
+    def test_female_marked_menu_does_not_leak_to_male(self):
+        got = extract_cut_prices([menu("일반(여)", "6,000원")])
+        self.assertEqual(got["w"]["price"], 6000)
+        self.assertEqual(got["w"]["how"], "exact")
+        self.assertIsNone(got["m"])
+
+
+class TestNonCutServices(unittest.TestCase):
+    """네이버가 priceType='cut'으로 태깅했지만 커트가 아닌 메뉴들."""
+
+    def test_dry_without_cut_word_excluded(self):
+        menus = [menu("베이직 드라이 (여)", "25,000원"),
+                 menu("컷 + 헤드스파(회원가)", "20,000원")]
+        got = extract_cut_prices(menus)
+        self.assertEqual(got["w"]["price"], 20000)
+        self.assertIn("베이직 드라이 (여)", got["dropped"])
+
+    def test_cut_bundled_with_other_service_kept(self):
+        for name in ("커트+드라이", "커트(셀프샴푸)", "컷&스타일링"):
+            got = extract_cut_prices([menu(name, "18,000원")])
+            self.assertIsNotNone(got["w"], name)

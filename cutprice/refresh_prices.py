@@ -40,13 +40,18 @@ def as_menus(cuts):
 
 
 def stalest(limit):
-    """확인이 가장 오래된 순으로 (샤드키, 업소) 목록을 만든다."""
+    """확인이 가장 오래된 순으로 (샤드키, 업소) 목록을 만든다.
+
+    확인일이 같으면 메뉴가 아직 없는 곳(cuts 미저장)을 먼저 집는다.
+    같은 날 중단된 작업을 이어받을 때 이미 끝낸 곳을 다시 긁지 않기 위한 것이다.
+    """
     rows = []
     for key in store.all_shard_keys():
         for place in store.load_shard(key).get("places", []):
-            rows.append((place.get("checked") or "", key, place["id"]))
+            has_menus = 1 if "cuts" in place else 0
+            rows.append((place.get("checked") or "", has_menus, key, place["id"]))
     rows.sort()
-    return rows[:limit]
+    return [(checked, key, pid) for checked, _, key, pid in rows][:limit]
 
 
 def main(argv=None):
