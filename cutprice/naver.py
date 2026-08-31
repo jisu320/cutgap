@@ -78,7 +78,7 @@ class NaverPlace:
                 time.sleep(5)
                 continue
             if res.status_code == 200:
-                return res.text
+                return self._decode(res)
             if res.status_code == 429:
                 log.warning("429. %.0f초 대기 후 재시도 (%d/%d)",
                             backoff, attempt + 1, self.max_retries)
@@ -91,6 +91,17 @@ class NaverPlace:
             log.warning("HTTP %s %s", res.status_code, url)
             time.sleep(10)
         raise Blocked(f"{self.max_retries}회 재시도 실패: {url}")
+
+    @staticmethod
+    def _decode(res):
+        """응답 본문을 UTF-8로 읽는다.
+
+        네이버는 Content-Type에 charset을 안 붙여서, requests가 기본값인
+        ISO-8859-1로 디코딩해 한글이 전부 깨진다. 강제로 UTF-8로 읽는다.
+        """
+        if not res.encoding or res.encoding.lower() in ("iso-8859-1", "latin-1"):
+            res.encoding = "utf-8"
+        return res.text
 
     @staticmethod
     def _apollo(html):

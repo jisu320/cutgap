@@ -99,3 +99,28 @@ class TestApolloExtraction(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class FakeResponse:
+    def __init__(self, body, encoding):
+        self._body = body
+        self.encoding = encoding
+
+    @property
+    def text(self):
+        # requests와 동일하게 self.encoding으로 디코딩한다
+        return self._body.decode(self.encoding or "iso-8859-1")
+
+
+class TestDecoding(unittest.TestCase):
+    """네이버는 charset 헤더를 안 준다. UTF-8로 강제하지 않으면 한글이 깨진다."""
+
+    def test_no_charset_header_is_read_as_utf8(self):
+        body = "맨즈플랜헤어 노원역3호점".encode("utf-8")
+        res = FakeResponse(body, "ISO-8859-1")        # requests의 기본 추정값
+        self.assertEqual(NaverPlace._decode(res), "맨즈플랜헤어 노원역3호점")
+
+    def test_explicit_charset_is_respected(self):
+        body = "커트".encode("utf-8")
+        res = FakeResponse(body, "utf-8")
+        self.assertEqual(NaverPlace._decode(res), "커트")

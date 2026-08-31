@@ -14,45 +14,72 @@ from .naver import BudgetExhausted, Blocked, NaverPlace
 
 log = logging.getLogger("enumerate")
 
+# 목록 응답은 한 질의당 58건에서 잘린다(page 파라미터도 안 먹는다).
+# 그래서 같은 지역을 검색어만 바꿔 여러 번 물어보고 결과를 합친다.
+KEYWORDS = ["미용실", "헤어샵", "헤어", "바버샵", "커트"]
 
-def sweep(api, tree, level, max_pages):
-    plan = regions.queries(tree, level)
-    log.info("%s 단계: 질의 %d개", level, len(plan))
+
+def plan_for(tree, level, query, refine):
+    """검색 질의 목록을 만든다. --query가 있으면 그 지역만 다룬다."""
+    if not query:
+        return regions.queries(tree, level)
+    plan = [(query, query)]
+    if refine:
+        parts = query.split()
+        dongs = []
+        if len(parts) >= 2:
+            dongs = tree.get(parts[0], {}).get(parts[1], [])
+        plan += [(query, "%s %s" % (query, d)) for d in dongs]
+    return plan
+
+
+def sweep(api, tree, level, max_pages, query=None, refine=False, keywords=None):
+    plan = plan_for(tree, level, query, refine)
+    keywords = keywords or ["미용실"]
+    log.info("질의 %d개 × 검색어 %d개 (%s)", len(plan), len(keywords), query or level)
     pagination_ok = None
     total_new = 0
 
-    for region, query in plan:
-        seen, page = set(), 1
+    for region, area in plan:
+        seen = set()
         collected = []
-        while page <= max_pages:
-            try:
-                found = api.search(f"{query} 미용실", page=page)
-            except (BudgetExhausted, Blocked) as exc:
-                log.warning("중단: %s", exc)
-                return total_new, False
-            fresh = [f for f in found if f["id"] not in seen]
-            if not found:
-                break
-            if page == 2 and pagination_ok is None:
-                pagination_ok = bool(fresh)
-                if not pagination_ok:
-                    log.warning("page 파라미터가 먹지 않는다. 1페이지만 쓰고 "
-                                "지역을 더 쪼개서 커버리지를 확보한다.")
-            for f in fresh:
-                seen.add(f["id"])
-                collected.append(f)
-                regions.learn(tree, f["region"])
-            if not fresh or pagination_ok is False:
-                break
-            page += 1
+        for keyword in keywords:
+            page = 1
+            while page <= max_pages:
+                try:
+                    found = api.search(f"{area} {keyword}", page=page)
+                except (BudgetExhausted, Blocked) as exc:
+                    log.warning("중단: %s", exc)
+                    if collected:
+                        _flush(region, collected)
+                    return total_new, False
+                fresh = [f for f in found if f["id"] not in seen]
+                if not found:
+                    break
+                if page == 2 and pagination_ok is None:
+                    pagination_ok = bool(fresh)
+                    if not pagination_ok:
+                        log.warning("page 파라미터가 먹지 않는다. 1페이지만 쓰고 "
+                                    "지역·검색어를 쪼개서 커버리지를 확보한다.")
+                for f in fresh:
+                    seen.add(f["id"])
+                    collected.append(f)
+                    regions.learn(tree, f["region"])
+                if not fresh or pagination_ok is False:
+                    break
+                page += 1
 
         if collected:
-            key = store.shard_key(region)
-            added, size = store.upsert_places(key, region, collected)
+            added, size = _flush(region, collected)
             total_new += added
-            log.info("%-22s +%-4d (누적 %d)", region, added, size)
+            log.info("%-26s +%-4d (누적 %d)", area, added, size)
 
     return total_new, True
+
+
+def _flush(region, collected):
+    key = store.shard_key(region)
+    return store.upsert_places(key, region, collected)
 
 
 def main(argv=None):
@@ -61,6 +88,11 @@ def main(argv=None):
     parser.add_argument("--budget", type=int, default=1200, help="이번 실행의 최대 요청 수")
     parser.add_argument("--delay", type=float, default=3.0, help="요청 간 최소 간격(초)")
     parser.add_argument("--max-pages", type=int, default=5)
+    parser.add_argument("--query", help='지역 하나만 수집. 예: "서울 노원구"')
+    parser.add_argument("--refine", action="store_true",
+                        help="--query 지역에서 이미 알아낸 동까지 쪼개서 수집")
+    parser.add_argument("--keywords", default="미용실",
+                        help='쉼표로 구분. "all"이면 %s' % ",".join(KEYWORDS))
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -68,7 +100,11 @@ def main(argv=None):
     api = NaverPlace(delay=args.delay, budget=args.budget)
 
     try:
-        new, finished = sweep(api, tree, args.level, args.max_pages)
+        keywords = KEYWORDS if args.keywords == "all" else [
+            k.strip() for k in args.keywords.split(",") if k.strip()]
+        new, finished = sweep(api, tree, args.level, args.max_pages,
+                              query=args.query, refine=args.refine,
+                              keywords=keywords)
     finally:
         regions.save(tree)
         store.rebuild_index()
