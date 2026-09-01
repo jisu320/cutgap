@@ -124,3 +124,15 @@ class TestDecoding(unittest.TestCase):
         body = "커트".encode("utf-8")
         res = FakeResponse(body, "utf-8")
         self.assertEqual(NaverPlace._decode(res), "커트")
+
+
+class TestRegionFilter(unittest.TestCase):
+    """'서울 노원구'로 검색하면 인접 구 업소가 5% 정도 섞여 온다."""
+
+    def test_belongs(self):
+        from cutprice.enumerate_places import belongs
+        self.assertTrue(belongs({"region": "서울 노원구 상계동"}, "서울 노원구"))
+        self.assertTrue(belongs({"region": "서울 노원구"}, "서울 노원구"))
+        self.assertFalse(belongs({"region": "서울 성북구 석관동"}, "서울 노원구"))
+        self.assertFalse(belongs({"region": None}, "서울 노원구"))
+        self.assertTrue(belongs({"region": "서울 노원구 상계동"}, "서울"))

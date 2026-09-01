@@ -76,6 +76,8 @@ def upsert_places(key, region, found):
             "x": round(item["x"], 6),
             "y": round(item["y"], 6),
             "rep": item["rep"],
+            # 검색이 인접 구까지 물어오기 때문에 소속을 남겨 걸러낸다
+            "in": item.get("region"),
         })
     shard["places"] = sorted(by_id.values(), key=lambda p: p["id"])
     shard["listed"] = date.today().isoformat()

@@ -147,20 +147,27 @@ class NaverPlace:
         return out
 
     # ── 상세: 업소당 1요청. 여기서만 메뉴 전체를 볼 수 있다 ──
-    def menus(self, place_id):
-        """업소의 메뉴 목록. 페이지가 없거나 메뉴가 없으면 빈 리스트."""
+    def detail(self, place_id):
+        """업소 상세. {'menus': [...], 'addr': '서울 노원구 ...'} 또는 None.
+
+        상세 페이지의 주소는 목록과 달리 시도·시군구가 붙은 전체 주소다.
+        검색이 물어온 타지역 업소를 확정적으로 걸러내는 근거로 쓴다.
+        """
         html = self._get(PRICE_URL.format(place_id=place_id))
         state = self._apollo(html)
         if not state:
             return None                      # 페이지 자체를 못 읽음
-        found = []
+        menus = []
+        addr = None
         for key, item in state.items():
             if key.startswith("Menu:"):
-                found.append({
+                menus.append({
                     "name": item.get("name"),
                     "price": item.get("price"),
                     "priceType": item.get("priceType"),
                     "index": item.get("index", 0),
                 })
-        found.sort(key=lambda m: m["index"])
-        return found
+            elif key.startswith("PlaceDetailBase:") and addr is None:
+                addr = item.get("roadAddress") or item.get("address")
+        menus.sort(key=lambda m: m["index"])
+        return {"menus": menus, "addr": addr}

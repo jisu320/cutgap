@@ -53,6 +53,7 @@ def sweep(api, tree, level, max_pages, query=None, refine=False, keywords=None):
                     if collected:
                         _flush(region, collected)
                     return total_new, False
+                found = [f for f in found if belongs(f, region)]
                 fresh = [f for f in found if f["id"] not in seen]
                 if not found:
                     break
@@ -75,6 +76,16 @@ def sweep(api, tree, level, max_pages, query=None, refine=False, keywords=None):
             log.info("%-26s +%-4d (누적 %d)", area, added, size)
 
     return total_new, True
+
+
+def belongs(item, region):
+    """검색 결과가 대상 지역 소속인가.
+
+    '서울 노원구 미용실'로 검색해도 인접 구(성북·강북·중랑) 업소가 섞여 온다.
+    응답의 commonAddress로 걸러낸다. 소속을 못 읽으면 버린다.
+    """
+    where = item.get("region") or ""
+    return where.startswith(region)
 
 
 def _flush(region, collected):

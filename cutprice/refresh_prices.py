@@ -91,7 +91,7 @@ def main(argv=None):
             if place is None:
                 continue
             try:
-                menus = api.menus(place_id)
+                detail = api.detail(place_id)
             except (BudgetExhausted, Blocked) as exc:
                 log.warning("중단: %s", exc)
                 stopped = True
@@ -99,12 +99,16 @@ def main(argv=None):
             place["checked"] = today
             dirty += 1
             done += 1
-            if menus is None:
+            if detail is None:
                 place["gone"] = True
                 failed += 1
             else:
                 place.pop("gone", None)
-                apply_menus(place, menus)
+                # 상세 주소는 시도·시군구가 붙어 있어 소속을 확정할 수 있다
+                addr = (detail.get("addr") or "").split()
+                if len(addr) >= 2:
+                    place["in"] = " ".join(addr[:2])
+                apply_menus(place, detail["menus"])
                 if place["w"] or place["m"]:
                     priced += 1
             # 오래 도는 작업이라 중간에 죽어도 여기까지는 남는다
