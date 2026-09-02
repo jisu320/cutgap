@@ -9,6 +9,65 @@
 이 프로젝트는 메뉴판 전체를 보고 **커트로 분류된 항목만** 남긴 뒤
 앞머리·부분컷·학생컷 등을 제외하고 **여성/남성 커트 최저가**를 뽑는다.
 
+사이트: **https://jisu320.github.io/cutgap/**
+
+## 사용법
+
+### 사이트에서
+
+1. **지역**을 고른다. `내 위치` 버튼을 누르면 가장 가까운 지역이 자동으로 잡힌다.
+2. **성별**을 토글한다. 여성 커트가와 남성 커트가는 따로 관리된다.
+3. **낮은 가격순**이 기본 정렬이다. 최저가 한 곳만 노란색으로 표시된다.
+4. 목록 항목에 마우스를 올리면 **지도의 해당 마커가 강조**된다. 마커에는
+   `순위 + 가격`이 적혀 있다.
+5. 항목을 클릭하면 그 업소의 **네이버 플레이스 원본**이 새 탭에서 열린다.
+
+읽는 법에서 중요한 두 가지.
+
+- 항목마다 **판정 근거가 된 원본 메뉴명**이 같이 표시된다
+  (`원문 "여성컷"`). 값이 이상하면 이걸 보고 바로 판단할 수 있다.
+- `성별 구분 없음` 이 붙은 항목은 그 업소 메뉴에 성별 구분이 없어서
+  공용 커트 가격을 남녀 양쪽에 적용한 것이다. 노원구에서는 절반쯤이 이렇다.
+- `가격 미표기`는 지우지 않고 회색으로 맨 아래에 남긴다. 숨기고 싶으면
+  `가격 미표기 숨기기`를 누른다.
+
+`앞머리·부분컷 제외`는 이 사이트의 목적이라서 끌 수 없다.
+
+### 데이터를 직접 다룰 때
+
+```bash
+pip install -r requirements.txt
+
+# 지금 수집 현황
+python -c "import json;d=json.load(open('docs/data/index.json'));print(d['total'],'곳 /',d['priced'],'곳 가격확인')"
+
+# 판정 규칙만 고치고 다시 판정 (네트워크 요청 0회)
+vi cutprice/menu.py                      # EXCLUDE / FEMALE / MALE 세 목록
+python -m cutprice.reparse --dry-run     # 무엇이 바뀌는지 먼저 본다
+python -m cutprice.reparse
+
+# 네이버 대표가격과 얼마나 어긋나는지
+python -m cutprice.audit
+
+# 특정 지역만 급히 수집
+python -m cutprice.enumerate_places --query "서울 강남구" --refine --keywords all --budget 150
+python -m cutprice.refresh_prices --budget 500
+
+# 화면만 확인 (수집 전이면 예시 데이터로)
+python -m cutprice.make_sample
+cd docs && python -m http.server 8000
+```
+
+오래 도는 작업은 세션이 끊겨도 살아남게 분리해서 띄운다.
+
+```bash
+nohup setsid python3 -u -m cutprice.refresh_prices --budget 600 --delay 4.0 > /tmp/refresh.log 2>&1 &
+tail -f /tmp/refresh.log
+```
+
+**로컬에서 작업하기 전에 항상 `git pull` 해라.** Actions가 매일 `docs/data`를
+직접 커밋하기 때문에 안 하면 push가 막힌다.
+
 ## 어떻게 동작하나
 
 ```
@@ -24,6 +83,16 @@
 [`tests/test_menu.py`](tests/test_menu.py)가 실측 데이터로 검증한다.
 
 ## 처음 세팅
+
+한 번만 하면 그다음부터 사람이 할 일은 없다.
+
+| | 항목 | 상태 |
+|---|---|---|
+| 1 | 저장소 push | 완료 |
+| 2 | Pages 켜기 (main `/docs`) | 완료 |
+| 3 | Actions 쓰기 권한 | 완료 |
+| 4 | Actions 변수 | 기본값으로 동작. 손댈 필요 없음 |
+| 5 | **지도 키** | **남음** — 없으면 지도 영역만 안내 문구가 뜬다 |
 
 ### 1. 지도 키
 
