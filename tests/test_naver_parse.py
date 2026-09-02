@@ -136,3 +136,26 @@ class TestRegionFilter(unittest.TestCase):
         self.assertFalse(belongs({"region": "서울 성북구 석관동"}, "서울 노원구"))
         self.assertFalse(belongs({"region": None}, "서울 노원구"))
         self.assertTrue(belongs({"region": "서울 노원구 상계동"}, "서울"))
+
+
+class TestEnumState(unittest.TestCase):
+    """하루 예산으로 끊고 다음 실행이 이어받기 위한 진행 기록."""
+
+    def test_freshness_window(self):
+        from datetime import date, timedelta
+        from cutprice.enumerate_places import is_fresh
+        today = date.today().isoformat()
+        old = (date.today() - timedelta(days=40)).isoformat()
+        state = {"서울 노원구|미용실": today, "서울 강남구|미용실": old}
+
+        self.assertTrue(is_fresh(state, "서울 노원구", "미용실", 30))
+        self.assertFalse(is_fresh(state, "서울 강남구", "미용실", 30))
+        self.assertFalse(is_fresh(state, "서울 중구", "미용실", 30))
+        # 0이면 기록을 무시하고 전부 다시 훑는다
+        self.assertFalse(is_fresh(state, "서울 노원구", "미용실", 0))
+
+    def test_one_day_window_still_skips_today(self):
+        from datetime import date
+        from cutprice.enumerate_places import is_fresh
+        state = {"a|b": date.today().isoformat()}
+        self.assertTrue(is_fresh(state, "a", "b", 1))

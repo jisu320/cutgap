@@ -14,6 +14,25 @@ SEEDS = [
     "경기", "강원", "충북", "충남", "전북", "전남", "경북", "경남", "제주",
 ]
 
+# 시도 단위 검색은 한 번에 58건만 주기 때문에, 그 결과만으로는 산하
+# 시군구를 다 알아낼 수 없다(서울에서 7개만 나왔다). 그래서 수집 대상
+# 시도의 시군구는 목록으로 심어준다. 동 이름은 그대로 자동 학습한다.
+SEED_SIGUNGU = {
+    "서울": [
+        "강남구", "강동구", "강북구", "강서구", "관악구", "광진구", "구로구",
+        "금천구", "노원구", "도봉구", "동대문구", "동작구", "마포구", "서대문구",
+        "서초구", "성동구", "성북구", "송파구", "양천구", "영등포구", "용산구",
+        "은평구", "종로구", "중구", "중랑구",
+    ],
+    "경기": [
+        "가평군", "고양시", "과천시", "광명시", "광주시", "구리시", "군포시",
+        "김포시", "남양주시", "동두천시", "부천시", "성남시", "수원시", "시흥시",
+        "안산시", "안성시", "안양시", "양주시", "양평군", "여주시", "연천군",
+        "오산시", "용인시", "의왕시", "의정부시", "이천시", "파주시", "평택시",
+        "포천시", "하남시", "화성시",
+    ],
+}
+
 PATH = os.path.join(store.DATA, "regions.json")
 
 
@@ -23,6 +42,9 @@ def load():
         tree = {sido: {} for sido in SEEDS}
     for sido in SEEDS:
         tree.setdefault(sido, {})
+    for sido, sigungus in SEED_SIGUNGU.items():
+        for sigungu in sigungus:
+            tree[sido].setdefault(sigungu, [])
     return tree
 
 
@@ -51,17 +73,22 @@ def learn(tree, common_address):
     return sigungu not in tree[sido] or True
 
 
-def queries(tree, level):
+def queries(tree, level, sido_filter=None):
     """검색에 쓸 질의 문자열 목록.
 
     level='sido'    씨앗 단계. 시군구를 알아내기 위한 정찰.
     level='sigungu' 시군구 단위. 동을 알아내면서 업소도 대량 확보.
     level='dong'    동 단위. 실제 전수 수집.
+
+    sido_filter를 주면 그 시도만 다룬다. 예: ["서울", "경기"]
     """
     out = []
+    wanted = set(sido_filter) if sido_filter else None
     if level == "sido":
-        return [(s, s) for s in SEEDS]
+        return [(s, s) for s in SEEDS if not wanted or s in wanted]
     for sido, sigungus in sorted(tree.items()):
+        if wanted and sido not in wanted:
+            continue
         for sigungu, dongs in sorted(sigungus.items()):
             region = f"{sido} {sigungu}"
             if level == "sigungu":
@@ -74,7 +101,9 @@ def queries(tree, level):
     return out
 
 
-def stats(tree):
-    sigungu = sum(len(v) for v in tree.values())
-    dong = sum(len(d) for v in tree.values() for d in v.values())
-    return {"sido": len(tree), "sigungu": sigungu, "dong": dong}
+def stats(tree, sido_filter=None):
+    wanted = set(sido_filter) if sido_filter else set(tree)
+    sub = {k: v for k, v in tree.items() if k in wanted}
+    sigungu = sum(len(v) for v in sub.values())
+    dong = sum(len(d) for v in sub.values() for d in v.values())
+    return {"sido": len(sub), "sigungu": sigungu, "dong": dong}

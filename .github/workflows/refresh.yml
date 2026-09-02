@@ -1,24 +1,28 @@
-name: 가격 갱신
+name: 수집
 
-# 하루 한 번, 한국 시간 새벽 4시. 트래픽이 가장 적은 시간대에만 돈다.
+# 하루 한 번, 한국 시간 새벽 4시. 사람 손이 필요 없다.
+#  1단계 열거: 아직 안 훑은 (지역, 검색어) 조합을 예산만큼 훑는다.
+#              진행 상태가 docs/data/enum_state.json 에 남아 다음 날 이어받는다.
+#  2단계 가격: 확인이 가장 오래된 업소부터 예산만큼 갱신한다.
 on:
   schedule:
     - cron: "0 19 * * *"
   workflow_dispatch:
     inputs:
-      mode:
-        description: "refresh(가격 갱신) / enumerate(목록 수집)"
+      stage:
+        description: "both / enumerate / prices"
         type: choice
-        default: refresh
-        options: [refresh, enumerate]
-      budget:
-        description: "이번 실행 최대 요청 수"
-        default: "2000"
-      level:
-        description: "enumerate 단계 (sido / sigungu / dong)"
-        type: choice
-        default: sigungu
-        options: [sido, sigungu, dong]
+        default: both
+        options: [both, enumerate, prices]
+      sido:
+        description: "대상 시도 (쉼표 구분, all이면 전국)"
+        default: ""
+      enum_budget:
+        description: "열거 요청 예산 (비우면 저장된 변수값)"
+        default: ""
+      price_budget:
+        description: "가격 요청 예산 (비우면 저장된 변수값)"
+        default: ""
 
 concurrency:
   group: cutgap-scrape
@@ -28,9 +32,15 @@ permissions:
   contents: write
 
 jobs:
-  run:
+  collect:
     runs-on: ubuntu-latest
     timeout-minutes: 330            # job 상한 6시간보다 여유를 둔다
+    env:
+      SIDO: ${{ github.event.inputs.sido || vars.TARGET_SIDO || '서울,경기' }}
+      ENUM_BUDGET: ${{ github.event.inputs.enum_budget || vars.ENUM_BUDGET || '400' }}
+      PRICE_BUDGET: ${{ github.event.inputs.price_budget || vars.DAILY_BUDGET || '600' }}
+      DELAY: ${{ vars.REQUEST_DELAY || '4.0' }}
+      STAGE: ${{ github.event.inputs.stage || 'both' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -41,20 +51,21 @@ jobs:
 
       - run: pip install -r requirements.txt
 
-      - name: 목록 수집
-        if: github.event.inputs.mode == 'enumerate'
+      - name: 1단계 목록 열거
+        if: env.STAGE == 'both' || env.STAGE == 'enumerate'
         run: |
           python -m cutprice.enumerate_places \
-            --level "${{ github.event.inputs.level }}" \
-            --budget "${{ github.event.inputs.budget }}" \
-            --delay "${{ vars.REQUEST_DELAY || '3.0' }}"
+            --level dong --keywords all --max-pages 1 \
+            --sido "$SIDO" --budget "$ENUM_BUDGET" --delay "$DELAY"
 
-      - name: 가격 갱신
-        if: github.event.inputs.mode != 'enumerate'
+      - name: 2단계 가격 갱신
+        if: env.STAGE == 'both' || env.STAGE == 'prices'
         run: |
           python -m cutprice.refresh_prices \
-            --budget "${{ github.event.inputs.budget || vars.DAILY_BUDGET || '2000' }}" \
-            --delay "${{ vars.REQUEST_DELAY || '3.0' }}"
+            --budget "$PRICE_BUDGET" --delay "$DELAY" --save-every 25
+
+      - name: 타지역 업소 정리
+        run: python -m cutprice.cleanup
 
       - name: 변경분 커밋
         run: |
@@ -67,3 +78,19 @@ jobs:
           git add docs/data
           git commit -m "데이터 갱신 $(date -u +%Y-%m-%d)"
           git push
+
+      - name: 현황 요약
+        if: always()
+        run: |
+          python - <<'PY' >> $GITHUB_STEP_SUMMARY
+          import json
+          idx = json.load(open("docs/data/index.json", encoding="utf-8"))
+          print("## 수집 현황\n")
+          print("전체 **%d**곳 / 가격 확인 **%d**곳 / 지역 %d개\n"
+                % (idx["total"], idx["priced"], len(idx["regions"])))
+          print("| 지역 | 업소 | 가격 확인 | 갱신 |")
+          print("|---|---:|---:|---|")
+          for r in sorted(idx["regions"], key=lambda r: -r["count"])[:60]:
+              print("| %s | %d | %d | %s |"
+                    % (r["region"], r["count"], r["priced"], r["updated"] or "-"))
+          PY
